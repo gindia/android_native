@@ -1,0 +1,10 @@
+*
+!.gitignore
+!README.md
+!README
+
+!code/
+!code/**
+!res/
+!res/**
+!build

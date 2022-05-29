@@ -1,0 +1,4 @@
+A code example of how to build a native_activity apk without a build system.
+
+Note1: make sure that ANDROID_USER_HOME is set and that you have installed JDK11 and ZIP.
+Note2: for android sdkmanager check build file for the correct version of build-tools, ndk and the targeted android api (and ofc that they are installed!).

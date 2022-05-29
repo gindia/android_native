@@ -1,0 +1,82 @@
+#!/bin/bash
+
+set -e
+
+BUILD_TOOLS_VERSION="30.0.3"
+NDK_VERSION="24.0.8215888"
+ANDROID_API="31"
+
+BUILD_TOOLS_DIR="$ANDROID_USER_HOME/build-tools/$BUILD_TOOLS_VERSION"
+AAPT2="$BUILD_TOOLS_DIR/aapt2"
+ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
+APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
+
+ANDROID_TARGET="$ANDROID_USER_HOME/platforms/android-$ANDROID_API/android.jar"
+
+NDK="$ANDROID_USER_HOME/ndk/$NDK_VERSION"
+
+COMPILERS_DIR="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+CC_x86_64="$COMPILERS_DIR/x86_64-linux-android$ANDROID_API-clang"
+CC_ARM64="$COMPILERS_DIR/aarch64-linux-android$ANDROID_API-clang"
+CC_ARM="$COMPILERS_DIR/armv7a-linux-androideabi$ANDROID_API-clang"
+CC_x86="$COMPILERS_DIR/i686-linux-android$ANDROID_API-clang"
+
+NATIVE_GLUE_DIR="$NDK/sources/android/native_app_glue"
+NATIVE_GLUE_C="$NATIVE_GLUE_DIR/android_native_app_glue.c"
+
+if [ -d target ]; then
+    rm target/* -fr
+fi
+
+mkdir -p target/apk/lib/x86_64
+mkdir -p target/apk/lib/x86
+mkdir -p target/apk/lib/arm64-v8a
+mkdir -p target/apk/lib/armeabi-v7a
+
+mkdir -p target/compiled
+
+$AAPT2 compile -o target/compiled res/mipmap/ic_launcher_hdpi.png
+$AAPT2 compile -o target/compiled res/mipmap/ic_launcher_ldpi.png
+$AAPT2 compile -o target/compiled res/mipmap/ic_launcher_mdpi.png
+$AAPT2 compile -o target/compiled res/mipmap/ic_launcher_xhdpi.png
+$AAPT2 compile -o target/compiled res/layout/layout.xml
+$AAPT2 compile -o target/compiled res/values/strings.xml
+
+$AAPT2 link -o target/apk \
+    --output-to-dir	\
+    --auto-add-overlay \
+    -I $ANDROID_TARGET \
+    --manifest code/AndroidManifest.xml \
+    target/compiled/layout_layout.xml.flat \
+    target/compiled/mipmap_ic_launcher_ldpi.png.flat \
+    target/compiled/mipmap_ic_launcher_xhdpi.png.flat \
+    target/compiled/mipmap_ic_launcher_hdpi.png.flat \
+    target/compiled/mipmap_ic_launcher_mdpi.png.flat \
+    target/compiled/values_strings.arsc.flat
+
+
+CC_ARGS="$NATIVE_GLUE_C code/android_entry.c -I $NATIVE_GLUE_DIR -landroid -llog"
+
+$CC_x86_64 -shared $CC_ARGS -o target/apk/lib/x86_64/libnative_example.so
+$CC_x86    -shared $CC_ARGS -o target/apk/lib/x86/libnative_example.so -fPIC
+$CC_ARM64  -shared $CC_ARGS -o target/apk/lib/arm64-v8a/libnative_example.so
+$CC_ARM    -shared $CC_ARGS -o target/apk/lib/armeabi-v7a/libnative_example.so
+
+pushd target/apk
+zip -r ../unaligned.unsigned.apk *
+popd
+
+$ZIPALIGN -p -f -v 4 target/unaligned.unsigned.apk target/unsigned.apk
+
+
+if [ ! -f debug.keystore ]; then
+    keytool -keyalg RSA -genkeypair -alias debug -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+fi
+
+$APKSIGNER sign --out target/example.apk \
+    --in target/unsigned.apk \
+    --ks debug.keystore \
+    --ks-key-alias "debug" \
+    --ks-pass "pass:android" \
+
+$APKSIGNER verify target/example.apk
